@@ -15,17 +15,20 @@
 #include <iosfwd>
 #include <optional>
 
+#include "util/Point.h"
 #include "util/Range.h"
+#include "util/Size.h"
 
 namespace xoj::util {  // Rectangle is already defined in windows.h
 
 template <class T>
-class Rectangle final {
+class Rectangle final: private Point<T>, private Size<T> {
 public:
     constexpr Rectangle() = default;
-    constexpr Rectangle(T x, T y, T width, T height): x(x), y(y), width(width), height(height) {}
+    constexpr Rectangle(T x, T y, T width, T height): Point<T>(x, y), Size<T>{width, height} {}
     constexpr explicit Rectangle(const Range& rect):
-            x(rect.getX()), y(rect.getY()), width(rect.getWidth()), height(rect.getHeight()) {}
+            Point<T>(rect.getX(), rect.getY()), Size<T>{rect.getWidth(), rect.getHeight()} {}
+    constexpr Rectangle(const Point<T>& p, const Size<T>& s): Point<T>(p), Size<T>(s) {}
 
     constexpr auto operator==(const Rectangle& other) const -> bool {
         return x == other.x && y == other.y && width == other.width && height == other.height;
@@ -83,10 +86,16 @@ public:
      */
     constexpr auto area() const -> T { return width * height; }
 
-    T x{};
-    T y{};
-    T width{};
-    T height{};
+    constexpr bool contains(const xoj::util::Point<T>& p) const {
+        return p.x > x && p.x < x + width && p.y > y && p.y < y + height;
+    }
+
+    const Point<T>& getOrigin() const { return *this; }
+
+    using Point<T>::x;
+    using Point<T>::y;
+    using Size<T>::width;
+    using Size<T>::height;
 };
 
 }  // namespace xoj::util

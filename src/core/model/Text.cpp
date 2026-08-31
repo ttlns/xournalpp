@@ -6,7 +6,7 @@
 #include <glib.h>  // for g_warning
 #include <pango/pangocairo.h>
 
-#include "model/AudioElement.h"   // for AudioElement
+#include "model/AudioContent.h"  // for AudioContent
 #include "model/Element.h"        // for ELEMENT_TEXT, Eleme...
 #include "model/Font.h"           // for XojFont
 #include "pdf/base/XojPdfPage.h"  // for XojPdfRectangle
@@ -14,12 +14,13 @@
 #include "util/Stacktrace.h"      // for Stacktrace
 #include "util/StringUtils.h"
 #include "util/raii/GObjectSPtr.h"
+#include "util/safe_casts.h"                      // for round_cast
 #include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
 #include "util/serializing/ObjectOutputStream.h"  // for ObjectOutputStream
 
 using xoj::util::Rectangle;
 
-Text::Text(): AudioElement(ELEMENT_TEXT) {
+Text::Text(): Element(ELEMENT_TEXT) {
     this->font.setName("Sans");
     this->font.setSize(12);
 }
@@ -28,17 +29,17 @@ Text::~Text() = default;
 
 auto Text::cloneText() const -> std::unique_ptr<Text> {
     auto text = std::make_unique<Text>();
+    static_cast<AudioContent&>(*text) = *this;
     text->font = this->font;
     text->text = this->text;
     text->setColor(this->getColor());
-    text->x = this->x;
-    text->y = this->y;
-    text->width = this->width;
-    text->height = this->height;
-    text->cloneAudioData(this);
+    text->boundingBox = this->boundingBox;
     text->snappedBounds = this->snappedBounds;
     text->sizeCalculated = this->sizeCalculated;
     text->inEditing = this->inEditing;
+    text->wrapWidth = this->wrapWidth;
+    text->align = this->align;
+    text->justify = this->justify;
 
     return text;
 }
@@ -64,25 +65,58 @@ void Text::setText(std::string text) {
     sizeCalculated = false;
 }
 
+void Text::setWrap(double wrap) {
+    this->wrapWidth = wrap;
+    sizeCalculated = false;
+}
+
+void Text::setAlignment(TextAlignment a) {
+    this->align = a;
+    sizeCalculated = false;
+}
+
+Text::Boxes Text::computeBoxesForLayout(PangoLayout* layout, xoj::util::Point<double> origin, double wrapWidth) {
+    PangoRectangle box;
+    pango_layout_get_extents(layout, nullptr, &box);
+
+    xoj::util::Point<double> offset{static_cast<double>(box.x) / PANGO_SCALE, static_cast<double>(box.y) / PANGO_SCALE};
+
+    Boxes res;
+
+    res.bounds.width = static_cast<double>(box.width) / PANGO_SCALE;
+    res.bounds.height = static_cast<double>(box.height) / PANGO_SCALE;
+    res.bounds.x = origin.x + offset.x;
+    res.bounds.y = origin.y + offset.y;
+
+    res.snap.x = origin.x;
+    res.snap.y = origin.y;
+
+    if (wrapWidth != NO_WRAP) {
+        res.snap.width = wrapWidth;
+    } else {
+        res.snap.width = res.bounds.width + offset.x;
+    }
+    res.snap.height = res.bounds.height + offset.y;
+
+    return res;
+}
+
+void Text::setOrigin(double x, double y) {
+    this->snappedBounds.x = x;
+    this->snappedBounds.y = y;
+    this->sizeCalculated = false;  // Recompute Element::x,y
+}
+
+auto Text::getOrigin() const -> const xoj::util::Point<double>& { return this->snappedBounds.getOrigin(); }
+
 void Text::calcSize() const {
     auto layout = createPangoLayout();
     pango_layout_set_text(layout.get(), this->text.c_str(), static_cast<int>(this->text.length()));
-    int w = 0;
-    int h = 0;
-    pango_layout_get_size(layout.get(), &w, &h);
-    this->width = (static_cast<double>(w)) / PANGO_SCALE;
-    this->height = (static_cast<double>(h)) / PANGO_SCALE;
-    this->updateSnapping();
-}
 
-void Text::setWidth(double width) {
-    this->width = width;
-    this->updateSnapping();
-}
+    auto boxes = computeBoxesForLayout(layout.get(), this->getOrigin(), this->wrapWidth);
 
-void Text::setHeight(double height) {
-    this->height = height;
-    this->updateSnapping();
+    this->boundingBox = boxes.bounds;
+    this->snappedBounds = boxes.snap;
 }
 
 void Text::setInEditing(bool inEditing) { this->inEditing = inEditing; }
@@ -92,6 +126,12 @@ auto Text::createPangoLayout() const -> xoj::util::GObjectSPtr<PangoLayout> {
                                            xoj::util::adopt);
     pango_context_set_round_glyph_positions(c.get(), false);  // Avoid weird glyph positioning on small fonts
     xoj::util::GObjectSPtr<PangoLayout> layout(pango_layout_new(c.get()), xoj::util::adopt);
+
+    pango_layout_set_width(layout.get(),
+                           this->wrapWidth == NO_WRAP ? -1 : round_cast<int>(this->wrapWidth * PANGO_SCALE));
+
+    pango_layout_set_justify(layout.get(), this->justify);
+    pango_layout_set_alignment(layout.get(), this->align.toPango());
 
 #if PANGO_VERSION_CHECK(1, 48, 5)  // see https://gitlab.gnome.org/GNOME/pango/-/issues/499
     pango_layout_set_line_spacing(layout.get(), 1.0);
@@ -118,15 +158,19 @@ void Text::scale(double x0, double y0, double fx, double fy, double rotation,
         Stacktrace::printStacktrace();
     }
 
-    this->x -= x0;
-    this->x *= fx;
-    this->x += x0;
-    this->y -= y0;
-    this->y *= fy;
-    this->y += y0;
+    this->boundingBox.x -= x0;
+    this->boundingBox.x *= fx;
+    this->boundingBox.x += x0;
+    this->boundingBox.y -= y0;
+    this->boundingBox.y *= fy;
+    this->boundingBox.y += y0;
 
     double size = this->font.getSize() * fx;
     this->font.setSize(size);
+
+    if (this->wrapWidth != NO_WRAP) {
+        this->wrapWidth *= fx;
+    }
 
     sizeCalculated = false;
 }
@@ -140,11 +184,16 @@ auto Text::rescaleOnlyAspectRatio() const -> bool { return true; }
 void Text::serialize(ObjectOutputStream& out) const {
     out.writeObject("Text");
 
-    this->AudioElement::serialize(out);
+    this->Element::serialize(out);
+    this->AudioContent::serialize(out);
 
     out.writeString(this->text);
 
     font.serialize(out);
+
+    out.writeDouble(this->wrapWidth);
+    out.writeInt(static_cast<int>(this->align));
+    out.writeInt(this->justify);
 
     out.endObject();
 }
@@ -152,17 +201,19 @@ void Text::serialize(ObjectOutputStream& out) const {
 void Text::readSerialized(ObjectInputStream& in) {
     in.readObject("Text");
 
-    this->AudioElement::readSerialized(in);
+    this->Element::readSerialized(in);
+    this->AudioContent::readSerialized(in);
 
     this->text = in.readString();
 
     font.readSerialized(in);
 
-    in.endObject();
-}
+    this->wrapWidth = in.readDouble();
+    this->align = static_cast<TextAlignment::Value>(in.readInt());
+    this->align.validate();
+    this->justify = in.readInt() != 0;
 
-void Text::updateSnapping() const {
-    this->snappedBounds = Rectangle<double>(this->x, this->y, this->width, this->height);
+    in.endObject();
 }
 
 auto Text::findText(const std::string& search) const -> std::vector<XojPdfRectangle> {
@@ -176,8 +227,9 @@ auto Text::findText(const std::string& search) const -> std::vector<XojPdfRectan
 
 
     std::string text = StringUtils::toLowerCase(this->text);
-
     std::string pattern = StringUtils::toLowerCase(search);
+
+    const auto& origin = this->getOrigin();
 
     std::vector<XojPdfRectangle> list;
 
@@ -185,12 +237,12 @@ auto Text::findText(const std::string& search) const -> std::vector<XojPdfRectan
         XojPdfRectangle mark;
         PangoRectangle rect = {0};
         pango_layout_index_to_pos(layout.get(), static_cast<int>(pos), &rect);
-        mark.x1 = (static_cast<double>(rect.x)) / PANGO_SCALE + this->getX();
-        mark.y1 = (static_cast<double>(rect.y)) / PANGO_SCALE + this->getY();
+        mark.x1 = (static_cast<double>(rect.x)) / PANGO_SCALE + origin.x;
+        mark.y1 = (static_cast<double>(rect.y)) / PANGO_SCALE + origin.y;
 
         pango_layout_index_to_pos(layout.get(), static_cast<int>(pos + patternLength - 1), &rect);
-        mark.x2 = (static_cast<double>(rect.x) + rect.width) / PANGO_SCALE + this->getX();
-        mark.y2 = (static_cast<double>(rect.y) + rect.height) / PANGO_SCALE + this->getY();
+        mark.x2 = (static_cast<double>(rect.x) + rect.width) / PANGO_SCALE + origin.x;
+        mark.y2 = (static_cast<double>(rect.y) + rect.height) / PANGO_SCALE + origin.y;
 
         list.push_back(mark);
     }

@@ -149,9 +149,6 @@ public:
     // Menu edit
     void showSettings();
 
-    // The core handler for inserting latex
-    void runLatex();
-
     // Menu Help
     void showAbout();
     void showGtkDemo();
@@ -174,7 +171,6 @@ public:
     void selectTool(ToolType type);
     void selectDefaultTool();
 
-    void setFontSelected(const XojFont& font);  ///< Modifies the Action state without triggering callbacks
     void fontChanged(const XojFont& font);      ///< Set the font after the user selected a font
 
     void updatePageNumbers(size_t page, size_t pdfPage);

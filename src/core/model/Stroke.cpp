@@ -14,7 +14,7 @@
 #include <glib.h>   // for g_free, g_message
 
 #include "eraser/PaddedBox.h"                     // for PaddedBox
-#include "model/AudioElement.h"                   // for AudioElement
+#include "model/AudioContent.h"                   // for AudioContent
 #include "model/Element.h"                        // for Element, ELEMENT_ST...
 #include "model/LineStyle.h"                      // for LineStyle
 #include "model/Point.h"                          // for Point, Point::NO_PR...
@@ -50,17 +50,17 @@ using xoj::util::Rectangle;
 #endif
 
 template <typename Float>
-constexpr void updateBoundingBox(Float& x, Float& y, Float& width, Float& height, Point const& p, double half_width) {
+constexpr void updateBoundingBox(Rectangle<Float>& box, Point const& p, double half_width) {
     {
-        Float x2 = x + width;
-        Float y2 = y + height;
+        Float x2 = box.x + box.width;
+        Float y2 = box.y + box.height;
 
-        x = std::min(x, p.x - half_width);
-        y = std::min(y, p.y - half_width);
+        box.x = std::min(box.x, p.x - half_width);
+        box.y = std::min(box.y, p.y - half_width);
         x2 = std::max(x2, p.x + half_width);
         y2 = std::max(y2, p.y + half_width);
-        width = x2 - x;
-        height = y2 - y;
+        box.width = x2 - box.x;
+        box.height = y2 - box.y;
     }
 }
 
@@ -80,7 +80,7 @@ constexpr void updateSnappedBounds(Rectangle<Float>& snap, Point const& p) {
 }
 
 
-Stroke::Stroke(): AudioElement(ELEMENT_STROKE) {}
+Stroke::Stroke(): Element(ELEMENT_STROKE) {}
 
 Stroke::~Stroke() = default;
 
@@ -95,17 +95,14 @@ void Stroke::applyStyleFrom(const Stroke* other) {
     setStrokeCapStyle(other->getStrokeCapStyle());
     setLineStyle(other->getLineStyle());
 
-    cloneAudioData(other);
+    static_cast<AudioContent&>(*this) = *other;
 }
 
 auto Stroke::cloneStroke() const -> std::unique_ptr<Stroke> {
     auto s = std::make_unique<Stroke>();
     s->applyStyleFrom(this);
     s->points = this->points;
-    s->x = this->x;
-    s->y = this->y;
-    s->Element::width = this->Element::width;
-    s->Element::height = this->Element::height;
+    s->boundingBox = this->boundingBox;
     s->snappedBounds = this->snappedBounds;
     s->sizeCalculated = this->sizeCalculated;
     return s;
@@ -169,7 +166,8 @@ std::unique_ptr<Stroke> Stroke::cloneCircularSectionOfClosedStroke(const PathPar
 void Stroke::serialize(ObjectOutputStream& out) const {
     out.writeObject("Stroke");
 
-    this->AudioElement::serialize(out);
+    this->Element::serialize(out);
+    this->AudioContent::serialize(out);
 
     out.writeDouble(this->width);
 
@@ -189,7 +187,8 @@ void Stroke::serialize(ObjectOutputStream& out) const {
 void Stroke::readSerialized(ObjectInputStream& in) {
     in.readObject("Stroke");
 
-    this->AudioElement::readSerialized(in);
+    this->Element::readSerialized(in);
+    this->AudioContent::readSerialized(in);
 
     this->width = in.readDouble();
 
@@ -254,7 +253,7 @@ void Stroke::addPoint(const Point& p) {
     if (hasPressure()) {
         updateBoundsLastTwoPressures();
     } else {
-        updateBoundingBox(Element::x, Element::y, Element::width, Element::height, p, 0.5 * this->width);
+        updateBoundingBox(Element::boundingBox, p, 0.5 * this->width);
         updateSnappedBounds(Element::snappedBounds, p);
     }
 }
@@ -294,10 +293,11 @@ void Stroke::setPointVectorInternal(const Range* const snappingBox) {
     } else {
         xoj_assert(snappingBox->isValid());
         this->snappedBounds = xoj::util::Rectangle<double>(*snappingBox);
-        Element::x = snappingBox->minX - 0.5 * this->width;
-        Element::y = snappingBox->minY - 0.5 * this->width;
-        Element::width = snappingBox->getWidth() + this->width;
-        Element::height = snappingBox->getHeight() + this->width;
+
+        this->boundingBox.x = snappingBox->minX - 0.5 * this->width;
+        this->boundingBox.y = snappingBox->minY - 0.5 * this->width;
+        this->boundingBox.width = snappingBox->getWidth() + this->width;
+        this->boundingBox.height = snappingBox->getHeight() + this->width;
         this->sizeCalculated = true;
     }
 }
@@ -328,8 +328,7 @@ void Stroke::move(double dx, double dy) {
         point.x += dx;
         point.y += dy;
     }
-    Element::x += dx;
-    Element::y += dy;
+    this->boundingBox = this->boundingBox.translated(dx, dy);
     Element::snappedBounds = Element::snappedBounds.translated(dx, dy);
 }
 
@@ -395,8 +394,8 @@ void Stroke::updateBoundsLastTwoPressures() {
     double pressure = p2.z;
 
     updateSnappedBounds(snappedBounds, p);
-    updateBoundingBox(Element::x, Element::y, Element::width, Element::height, p, 0.5 * pressure);
-    updateBoundingBox(Element::x, Element::y, Element::width, Element::height, p2, 0.5 * pressure);
+    updateBoundingBox(boundingBox, p, 0.5 * pressure);
+    updateBoundingBox(boundingBox, p2, 0.5 * pressure);
 }
 
 void Stroke::scalePressure(double factor) {
@@ -815,14 +814,7 @@ auto Stroke::intersectWithPaddedBox(const PaddedBox& box, size_t firstIndex, siz
  */
 void Stroke::calcSize() const {
     if (this->points.empty()) {
-        Element::x = 0;
-        Element::y = 0;
-
-        // The size of the rectangle, not the size of the pen!
-        Element::width = 0;
-        Element::height = 0;
-
-        // used for snapping
+        Element::boundingBox = Rectangle<double>{};
         Element::snappedBounds = Rectangle<double>{};
     }
 
@@ -849,10 +841,7 @@ void Stroke::calcSize() const {
     auto maxX = maxSnapX + halfThick;
     auto maxY = maxSnapY + halfThick;
 
-    Element::x = minX;
-    Element::y = minY;
-    Element::width = maxX - minX;
-    Element::height = maxY - minY;
+    Element::boundingBox = Rectangle<double>(minX, minY, maxX - minX, maxY - minY);
     Element::snappedBounds = Rectangle<double>(minSnapX, minSnapY, maxSnapX - minSnapX, maxSnapY - minSnapY);
 }
 

@@ -6,6 +6,8 @@
 
 #include <type_traits>
 
+#include <control/tools/TextEditor.h>
+
 #include "control/AudioController.h"
 #include "control/Control.h"
 #include "control/NavigationHistory.h"
@@ -806,6 +808,35 @@ struct ActionProperties<Action::FONT> {
 };
 
 template <>
+struct ActionProperties<Action::TEXT_ALIGNMENT> {
+    using state_type = TextAlignment::Value;
+    using parameter_type = state_type;
+    static state_type initialState(Control* ctrl) { return ctrl->getToolHandler()->getTextAlignment(); }
+    static void callback(GSimpleAction* ga, GVariant* p, Control* ctrl) {
+        g_simple_action_set_state(ga, p);
+        TextAlignment al = getGVariantValue<TextAlignment::Value>(p);
+        ctrl->getToolHandler()->setTextAlignment(al);
+        if (auto* te = ctrl->getTextEditor(); te) {
+            te->setAlignment(al);
+        }
+    }
+};
+
+template <>
+struct ActionProperties<Action::TEXT_JUSTIFY> {
+    using state_type = bool;
+    static state_type initialState(Control* ctrl) { return ctrl->getToolHandler()->getTextJustify(); }
+    static void callback(GSimpleAction* ga, GVariant* p, Control* ctrl) {
+        g_simple_action_set_state(ga, p);
+        bool justify = g_variant_get_boolean(p);
+        ctrl->getToolHandler()->setTextJustify(justify);
+        if (auto* te = ctrl->getTextEditor(); te) {
+            te->setJustify(justify);
+        }
+    }
+};
+
+template <>
 struct ActionProperties<Action::AUDIO_RECORD> {
     using state_type = bool;
     static constexpr state_type initialState(Control*) { return false; }
@@ -906,11 +937,6 @@ struct ActionProperties<Action::AUDIO_STOP_PLAYBACK> {
         g_warning("Audio has been disabled at compile time");
 #endif
     }
-};
-
-template <>
-struct ActionProperties<Action::TEX> {
-    static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->runLatex(); }
 };
 
 

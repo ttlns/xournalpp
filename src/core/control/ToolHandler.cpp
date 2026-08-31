@@ -13,9 +13,12 @@
 #include "control/actions/ActionDatabase.h"
 #include "control/settings/Settings.h"  // for SElement, Settings
 #include "model/StrokeStyle.h"          // for StrokeStyle
+#include "model/TextAlignment.h"
+#include "util/Assert.h"
 #include "util/Color.h"
 #include "util/Stacktrace.h"  // for Stac...
 #include "util/safe_casts.h"  // for as_unsigned
+
 
 class LineStyle;
 
@@ -29,8 +32,7 @@ ToolHandler::ToolHandler(ToolListener* stateChangeListener, ActionDatabase* acti
 
 class ToolSelectPDFText: public Tool {
 public:
-    ToolSelectPDFText(std::string name, ToolType type, Color color):
-            Tool(name, type, color, TOOL_CAP_COLOR, std::nullopt) {}
+    ToolSelectPDFText(std::string name, ToolType type, Color color): Tool(name, type, color, std::nullopt) {}
 
     ~ToolSelectPDFText() override{};
 
@@ -53,19 +55,14 @@ void ToolHandler::initTools() {
     thickness[TOOL_SIZE_MEDIUM] = 1.41;
     thickness[TOOL_SIZE_THICK] = 2.26;
     thickness[TOOL_SIZE_VERY_THICK] = 5.67;
-    tools[TOOL_PEN - TOOL_PEN] = std::make_unique<Tool>(
-            "pen", TOOL_PEN, Colors::xopp_royalblue,
-            TOOL_CAP_COLOR | TOOL_CAP_SIZE | TOOL_CAP_RULER | TOOL_CAP_RECTANGLE | TOOL_CAP_ELLIPSE | TOOL_CAP_ARROW |
-                    TOOL_CAP_DOUBLE_ARROW | TOOL_CAP_SPLINE | TOOL_CAP_RECOGNIZER | TOOL_CAP_FILL | TOOL_CAP_LINE_STYLE,
-            thickness);
+    tools[TOOL_PEN - TOOL_PEN] = std::make_unique<Tool>("pen", TOOL_PEN, Colors::xopp_royalblue, thickness);
 
     thickness[TOOL_SIZE_VERY_FINE] = 1;
     thickness[TOOL_SIZE_FINE] = 2.83;
     thickness[TOOL_SIZE_MEDIUM] = 8.50;
     thickness[TOOL_SIZE_THICK] = 12;
     thickness[TOOL_SIZE_VERY_THICK] = 18;
-    tools[TOOL_ERASER - TOOL_PEN] =
-            std::make_unique<Tool>("eraser", TOOL_ERASER, Colors::black, TOOL_CAP_SIZE, thickness);
+    tools[TOOL_ERASER - TOOL_PEN] = std::make_unique<Tool>("eraser", TOOL_ERASER, Colors::black, thickness);
 
     // highlighter thicknesses = 1, 3, 7 mm
     thickness[TOOL_SIZE_VERY_FINE] = 1;
@@ -73,62 +70,57 @@ void ToolHandler::initTools() {
     thickness[TOOL_SIZE_MEDIUM] = 8.50;
     thickness[TOOL_SIZE_THICK] = 19.84;
     thickness[TOOL_SIZE_VERY_THICK] = 30;
-    tools[TOOL_HIGHLIGHTER - TOOL_PEN] = std::make_unique<Tool>(
-            "highlighter", TOOL_HIGHLIGHTER, Colors::yellow,
-            TOOL_CAP_COLOR | TOOL_CAP_SIZE | TOOL_CAP_RULER | TOOL_CAP_RECTANGLE | TOOL_CAP_ELLIPSE | TOOL_CAP_ARROW |
-                    TOOL_CAP_DOUBLE_ARROW | TOOL_CAP_SPLINE | TOOL_CAP_RECOGNIZER | TOOL_CAP_FILL,
-            thickness);
+    tools[TOOL_HIGHLIGHTER - TOOL_PEN] =
+            std::make_unique<Tool>("highlighter", TOOL_HIGHLIGHTER, Colors::yellow, thickness);
 
-    tools[TOOL_TEXT - TOOL_PEN] =
-            std::make_unique<Tool>("text", TOOL_TEXT, Colors::black, TOOL_CAP_COLOR, std::nullopt);
+    tools[TOOL_TEXT - TOOL_PEN] = std::make_unique<Tool>("text", TOOL_TEXT, Colors::black, std::nullopt);
 
-    tools[TOOL_IMAGE - TOOL_PEN] =
-            std::make_unique<Tool>("image", TOOL_IMAGE, Colors::black, TOOL_CAP_NONE, std::nullopt);
+    tools[TOOL_LATEX - TOOL_PEN] = std::make_unique<Tool>("latex", TOOL_LATEX, Colors::black, std::nullopt);
+
+    tools[TOOL_IMAGE - TOOL_PEN] = std::make_unique<Tool>("image", TOOL_IMAGE, Colors::black, std::nullopt);
 
     tools[TOOL_SELECT_RECT - TOOL_PEN] =
-            std::make_unique<Tool>("selectRect", TOOL_SELECT_RECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("selectRect", TOOL_SELECT_RECT, Colors::black, std::nullopt);
 
     tools[TOOL_SELECT_REGION - TOOL_PEN] =
-            std::make_unique<Tool>("selectRegion", TOOL_SELECT_REGION, Colors::black, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("selectRegion", TOOL_SELECT_REGION, Colors::black, std::nullopt);
 
     tools[TOOL_SELECT_MULTILAYER_RECT - TOOL_PEN] =
-            std::make_unique<Tool>("selectMultiLayerRect", TOOL_SELECT_MULTILAYER_RECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("selectMultiLayerRect", TOOL_SELECT_MULTILAYER_RECT, Colors::black, std::nullopt);
 
-    tools[TOOL_SELECT_MULTILAYER_REGION - TOOL_PEN] =
-            std::make_unique<Tool>("selectMultiLayerRegion", TOOL_SELECT_MULTILAYER_REGION, Colors::black, TOOL_CAP_NONE, std::nullopt);
+    tools[TOOL_SELECT_MULTILAYER_REGION - TOOL_PEN] = std::make_unique<Tool>(
+            "selectMultiLayerRegion", TOOL_SELECT_MULTILAYER_REGION, Colors::black, std::nullopt);
 
     tools[TOOL_SELECT_OBJECT - TOOL_PEN] =
-            std::make_unique<Tool>("selectObject", TOOL_SELECT_OBJECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("selectObject", TOOL_SELECT_OBJECT, Colors::black, std::nullopt);
 
     tools[TOOL_VERTICAL_SPACE - TOOL_PEN] =
-            std::make_unique<Tool>("verticalSpace", TOOL_VERTICAL_SPACE, Colors::black, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("verticalSpace", TOOL_VERTICAL_SPACE, Colors::black, std::nullopt);
 
-    tools[TOOL_HAND - TOOL_PEN] =
-            std::make_unique<Tool>("hand", TOOL_HAND, Colors::black, TOOL_CAP_NONE, std::nullopt);
+    tools[TOOL_HAND - TOOL_PEN] = std::make_unique<Tool>("hand", TOOL_HAND, Colors::black, std::nullopt);
 
     tools[TOOL_PLAY_OBJECT - TOOL_PEN] =
-            std::make_unique<Tool>("playObject", TOOL_PLAY_OBJECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("playObject", TOOL_PLAY_OBJECT, Colors::black, std::nullopt);
 
-    tools[TOOL_DRAW_RECT - TOOL_PEN] =
-            std::make_unique<Tool>("drawRect", TOOL_DRAW_RECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
+    tools[TOOL_DRAW_RECT - TOOL_PEN] = std::make_unique<Tool>("drawRect", TOOL_DRAW_RECT, Colors::black, std::nullopt);
 
     tools[TOOL_DRAW_ELLIPSE - TOOL_PEN] =
-            std::make_unique<Tool>("drawEllipse", TOOL_DRAW_ELLIPSE, Colors::black, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("drawEllipse", TOOL_DRAW_ELLIPSE, Colors::black, std::nullopt);
 
     tools[TOOL_DRAW_ARROW - TOOL_PEN] =
-            std::make_unique<Tool>("drawArrow", TOOL_DRAW_ARROW, Colors::black, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("drawArrow", TOOL_DRAW_ARROW, Colors::black, std::nullopt);
 
-    tools[TOOL_DRAW_DOUBLE_ARROW - TOOL_PEN] = std::make_unique<Tool>("drawDoubleArrow", TOOL_DRAW_DOUBLE_ARROW,
-                                                                      Colors::black, TOOL_CAP_NONE, std::nullopt);
+    tools[TOOL_DRAW_DOUBLE_ARROW - TOOL_PEN] =
+            std::make_unique<Tool>("drawDoubleArrow", TOOL_DRAW_DOUBLE_ARROW, Colors::black, std::nullopt);
 
-    tools[TOOL_DRAW_COORDINATE_SYSTEM - TOOL_PEN] = std::make_unique<Tool>(
-            "drawCoordinateSystem", TOOL_DRAW_COORDINATE_SYSTEM, Colors::black, TOOL_CAP_NONE, std::nullopt);
+    tools[TOOL_DRAW_COORDINATE_SYSTEM - TOOL_PEN] =
+            std::make_unique<Tool>("drawCoordinateSystem", TOOL_DRAW_COORDINATE_SYSTEM, Colors::black, std::nullopt);
 
     tools[TOOL_DRAW_SPLINE - TOOL_PEN] =
-            std::make_unique<Tool>("drawSpline", TOOL_DRAW_SPLINE, Colors::black, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("drawSpline", TOOL_DRAW_SPLINE, Colors::black, std::nullopt);
 
-    tools[TOOL_FLOATING_TOOLBOX - TOOL_PEN] = std::make_unique<Tool>("showFloatingToolbox", TOOL_FLOATING_TOOLBOX,
-                                                                     Colors::black, TOOL_CAP_NONE, std::nullopt);
+    tools[TOOL_FLOATING_TOOLBOX - TOOL_PEN] =
+            std::make_unique<Tool>("showFloatingToolbox", TOOL_FLOATING_TOOLBOX, Colors::black, std::nullopt);
 
     tools[TOOL_SELECT_PDF_TEXT_LINEAR - TOOL_PEN] =
             std::make_unique<ToolSelectPDFText>("selectPdfTextLinear", TOOL_SELECT_PDF_TEXT_LINEAR, Colors::black);
@@ -141,25 +133,17 @@ void ToolHandler::initTools() {
     thickness[TOOL_SIZE_MEDIUM] = 2.4;
     thickness[TOOL_SIZE_THICK] = 4;
     thickness[TOOL_SIZE_VERY_THICK] = 7;
-    tools[TOOL_LASER_POINTER_PEN - TOOL_PEN] = std::make_unique<Tool>(
-            "laserPointerPen", TOOL_LASER_POINTER_PEN, Colors::red, TOOL_CAP_COLOR | TOOL_CAP_SIZE, thickness);
+    tools[TOOL_LASER_POINTER_PEN - TOOL_PEN] =
+            std::make_unique<Tool>("laserPointerPen", TOOL_LASER_POINTER_PEN, Colors::red, thickness);
     thickness[TOOL_SIZE_VERY_FINE] = 1;
     thickness[TOOL_SIZE_FINE] = 2.83;
     thickness[TOOL_SIZE_MEDIUM] = 8.50;
     thickness[TOOL_SIZE_THICK] = 19.84;
     thickness[TOOL_SIZE_VERY_THICK] = 30;
     tools[TOOL_LASER_POINTER_HIGHLIGHTER - TOOL_PEN] =
-            std::make_unique<Tool>("laserPointerHighlighter", TOOL_LASER_POINTER_HIGHLIGHTER, Colors::red,
-                                   TOOL_CAP_COLOR | TOOL_CAP_SIZE, thickness);
+            std::make_unique<Tool>("laserPointerHighlighter", TOOL_LASER_POINTER_HIGHLIGHTER, Colors::red, thickness);
 
-    this->eraserButtonTool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
-    this->stylusButton1Tool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
-    this->stylusButton2Tool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
-    this->mouseMiddleButtonTool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
-    this->mouseRightButtonTool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
-    this->mouseButton4Tool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
-    this->mouseButton5Tool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
-    this->touchDrawingButtonTool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
+    tools[TOOL_LINK - TOOL_PEN] = std::make_unique<Tool>("link", TOOL_LINK, Colors::black, std::nullopt);
 
     this->toolbarSelectedTool = &getTool(TOOL_PEN);
     this->activeTool = &getTool(TOOL_PEN);
@@ -178,6 +162,7 @@ void ToolHandler::setEraserType(EraserType eraserType) {
 
 void ToolHandler::setButtonEraserType(EraserType eraserType, Button button) {
     Tool* tool = getButtonTool(button);
+    xoj_assert(tool);
     tool->setEraserType(eraserType);
 }
 
@@ -325,6 +310,14 @@ auto ToolHandler::getSelectPDFTextMarkerOpacity() const -> int {
     return this->getTool(TOOL_SELECT_PDF_TEXT_LINEAR).getColor().alpha;
 }
 
+void ToolHandler::setTextAlignment(TextAlignment a) { this->getTool(TOOL_TEXT).setTextAlignment(a); }
+
+auto ToolHandler::getTextAlignment() const -> TextAlignment { return this->getTool(TOOL_TEXT).getTextAlignment(); }
+
+void ToolHandler::setTextJustify(bool j) { this->getTool(TOOL_TEXT).setTextJustify(j); }
+
+auto ToolHandler::getTextJustify() const -> bool { return this->getTool(TOOL_TEXT).getTextJustify(); }
+
 auto ToolHandler::getThickness() const -> double {
     Tool* tool = this->activeTool;
     if (tool->thickness) {
@@ -351,6 +344,7 @@ void ToolHandler::setButtonSize(ToolSize size, Button button) {
         g_warning("ToolHandler::setSize: Invalid size! %i", size);
 
     Tool* tool = getButtonTool(button);
+    xoj_assert(tool);
     tool->setSize(clippedSize);
 }
 
@@ -377,6 +371,7 @@ void ToolHandler::setColor(Color color, bool userSelection) {
 
 void ToolHandler::setButtonColor(Color color, Button button) {
     Tool* tool = this->getButtonTool(button);
+    xoj_assert(tool);
     tool->setColor(color);
 }
 
@@ -419,6 +414,7 @@ void ToolHandler::setDrawingType(DrawingType drawingType) {
 
 void ToolHandler::setButtonDrawingType(DrawingType drawingType, Button button) {
     Tool* tool = getButtonTool(button);
+    xoj_assert(tool);
     tool->setDrawingType(drawingType);
 }
 
@@ -428,6 +424,7 @@ void ToolHandler::setButtonStrokeType(StrokeType strokeType, Button button) {
 
 void ToolHandler::setButtonStrokeType(const LineStyle& lineStyle, Button button) {
     Tool* tool = getButtonTool(button);
+    xoj_assert(tool);
     tool->setLineStyle(lineStyle);
 }
 
@@ -482,7 +479,7 @@ void ToolHandler::saveSettings() const {
             st.setInt("fillAlpha", tool->getFillAlpha());
         }
 
-        if (tool->type == TOOL_PEN) {
+        if (tool->hasCapability(TOOL_CAP_LINE_STYLE)) {
             st.setString("style", StrokeStyle::formatStyle(tool->getLineStyle()));
         }
 
@@ -495,6 +492,14 @@ void ToolHandler::saveSettings() const {
             {
                 st.setString("type", "default");
             }
+        }
+
+        if (tool->hasCapability(TOOL_CAP_ALIGN)) {
+            st.setInt("align", static_cast<int>(tool->getTextAlignment()));
+        }
+
+        if (tool->hasCapability(TOOL_CAP_JUSTIFY)) {
+            st.setBool("justify", tool->getTextJustify());
         }
     }
 
@@ -568,14 +573,27 @@ void ToolHandler::loadSettings() {
                     eraserTypeChanged();
                 }
             }
+
+            int align;
+            if (tool->hasCapability(TOOL_CAP_ALIGN) && st.getInt("align", align)) {
+                TextAlignment al = static_cast<TextAlignment::Value>(align);
+                al.validate();
+                tool->setTextAlignment(al);
+            }
+
+            bool justify;
+            if (tool->hasCapability(TOOL_CAP_JUSTIFY) && st.getBool("justify", justify)) {
+                tool->setTextJustify(justify);
+            }
         }
     }
 }
 
 bool ToolHandler::pointActiveToolToButtonTool(Button button) {
     Tool* tool = getButtonTool(button);
-    if (this->activeTool == tool)
+    if (!tool || this->activeTool == tool) {
         return false;
+    }
     this->activeTool = tool;
     return true;
 }
@@ -628,11 +646,10 @@ auto ToolHandler::isSinglePageTool() const -> bool {
              drawingType == DRAWING_TYPE_LINE || drawingType == DRAWING_TYPE_RECTANGLE ||
              drawingType == DRAWING_TYPE_SPLINE)) ||
            toolType == TOOL_SELECT_RECT || toolType == TOOL_SELECT_REGION || toolType == TOOL_SELECT_MULTILAYER_RECT ||
-           toolType == TOOL_SELECT_MULTILAYER_REGION || toolType == TOOL_SELECT_OBJECT ||
-           toolType == TOOL_DRAW_RECT || toolType == TOOL_DRAW_ELLIPSE || toolType == TOOL_DRAW_COORDINATE_SYSTEM ||
-           toolType == TOOL_DRAW_ARROW || toolType == TOOL_DRAW_DOUBLE_ARROW || toolType == TOOL_FLOATING_TOOLBOX ||
-           toolType == TOOL_DRAW_SPLINE || toolType == TOOL_SELECT_PDF_TEXT_LINEAR ||
-           toolType == TOOL_SELECT_PDF_TEXT_RECT;
+           toolType == TOOL_SELECT_MULTILAYER_REGION || toolType == TOOL_SELECT_OBJECT || toolType == TOOL_DRAW_RECT ||
+           toolType == TOOL_DRAW_ELLIPSE || toolType == TOOL_DRAW_COORDINATE_SYSTEM || toolType == TOOL_DRAW_ARROW ||
+           toolType == TOOL_DRAW_DOUBLE_ARROW || toolType == TOOL_FLOATING_TOOLBOX || toolType == TOOL_DRAW_SPLINE ||
+           toolType == TOOL_SELECT_PDF_TEXT_LINEAR || toolType == TOOL_SELECT_PDF_TEXT_RECT || toolType == TOOL_LINK;
 }
 
 auto ToolHandler::acceptsOutOfPageEvents() const -> bool {
@@ -689,34 +706,34 @@ auto ToolHandler::getButtonTool(Button button) const -> Tool* {
 }
 
 void ToolHandler::resetButtonTool(ToolType type, Button button) {
-    auto& tool = *(tools[type - TOOL_PEN]);
+    auto t = type == TOOL_NONE ? nullptr : std::make_unique<Tool>(*tools[type - TOOL_PEN]);
     switch (button) {
         case Button::BUTTON_ERASER:
-            this->eraserButtonTool.reset(new Tool(tool));
+            this->eraserButtonTool = std::move(t);
             break;
         case Button::BUTTON_STYLUS_ONE:
-            this->stylusButton1Tool.reset(new Tool(tool));
+            this->stylusButton1Tool = std::move(t);
             break;
         case Button::BUTTON_STYLUS_TWO:
-            this->stylusButton2Tool.reset(new Tool(tool));
+            this->stylusButton2Tool = std::move(t);
             break;
         case Button::BUTTON_MOUSE_LEFT:
-            this->mouseLeftButtonTool.reset(new Tool(tool));
+            this->mouseLeftButtonTool = std::move(t);
             break;
         case Button::BUTTON_MOUSE_MIDDLE:
-            this->mouseMiddleButtonTool.reset(new Tool(tool));
+            this->mouseMiddleButtonTool = std::move(t);
             break;
         case Button::BUTTON_MOUSE_RIGHT:
-            this->mouseRightButtonTool.reset(new Tool(tool));
+            this->mouseRightButtonTool = std::move(t);
             break;
         case Button::BUTTON_MOUSE_4:
-            this->mouseButton4Tool.reset(new Tool(tool));
+            this->mouseButton4Tool = std::move(t);
             break;
         case Button::BUTTON_MOUSE_5:
-            this->mouseButton5Tool.reset(new Tool(tool));
+            this->mouseButton5Tool = std::move(t);
             break;
         case Button::BUTTON_TOUCH:
-            this->touchDrawingButtonTool.reset(new Tool(tool));
+            this->touchDrawingButtonTool = std::move(t);
             break;
         default:
             g_error("This button is not defined for ToolHandler.");

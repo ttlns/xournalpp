@@ -76,6 +76,7 @@
 #include "model/Image.h"                                         // for Image
 #include "model/Layer.h"                                         // for Layer
 #include "model/LineStyle.h"                                     // for Line...
+#include "model/Link.h"                                          // for Link
 #include "model/PageType.h"                                      // for Page...
 #include "model/Setsquare.h"                                     // for Sets...
 #include "model/Stroke.h"                                        // for Stroke
@@ -113,7 +114,6 @@
 #include "view/overlays/OverlayView.h"                           // for Over...
 
 #include "CrashHandler.h"                    // for emer...
-#include "LatexController.h"                 // for Late...
 #include "PageBackgroundChangeController.h"  // for Page...
 #include "PrintHandler.h"                    // for print
 #include "UndoRedoController.h"              // for Undo...
@@ -1201,10 +1201,6 @@ void Control::selectDefaultTool() {
     }
 }
 
-void Control::setFontSelected(const XojFont& font) {
-    this->actionDB->setActionState(Action::FONT, font.asString().c_str());
-}
-
 void Control::toolChanged() {
     ToolType type = toolHandler->getToolType();
 
@@ -1252,11 +1248,27 @@ void Control::toolChanged() {
         toolColorChanged();
     }
 
+    bool enableTextAlign = toolHandler->hasCapability(TOOL_CAP_ALIGN);
+    this->actionDB->enableAction(Action::TEXT_ALIGNMENT, enableTextAlign);
+    if (enableTextAlign) {
+        this->actionDB->setActionState(Action::TEXT_ALIGNMENT, toolHandler->getActiveTool()->getTextAlignment());
+    }
+    bool enableTextJustify = toolHandler->hasCapability(TOOL_CAP_JUSTIFY);
+    this->actionDB->enableAction(Action::TEXT_JUSTIFY, enableTextJustify);
+    if (enableTextAlign) {
+        this->actionDB->setActionState(Action::TEXT_JUSTIFY, toolHandler->getActiveTool()->getTextJustify());
+    }
+
     getCursor()->updateCursor();
 
     if (type != TOOL_TEXT) {
         if (win) {
             win->getXournal()->endTextAllPages();
+        }
+    }
+    if (type != TOOL_LINK) {
+        if (win) {
+            win->getXournal()->endLinkAllPages();
         }
     }
     if (toolHandler->getDrawingType() != DRAWING_TYPE_SPLINE) {
@@ -1840,6 +1852,12 @@ void Control::fileLoaded(int scrollToPage) {
             loadMetadata(*md);
         }
         RecentManager::addRecentFileFilename(filepath);
+
+        if (settings->getForceZoomToFitOnLoad()) {
+            zoom->updateZoomFitValue();
+            zoom->setZoomFitMode(true);
+        }
+
     } else {
         zoom->updateZoomFitValue();
         zoom->setZoomFitMode(true);
@@ -2344,6 +2362,8 @@ void Control::clipboardPasteText(string text) {
     t->setText(std::move(text));
     t->setFont(settings->getFont());
     t->setColor(toolHandler->getTool(TOOL_TEXT).getColor());
+    t->setAlignment(toolHandler->getTool(TOOL_TEXT).getTextAlignment());
+    t->setJustify(toolHandler->getTool(TOOL_TEXT).getTextJustify());
 
     clipboardPaste(std::move(t));
 }
@@ -2414,14 +2434,12 @@ void Control::clipboardPaste(ElementPtr e) {
 
     win->getXournal()->getPasteTarget(x, y);
 
-    double width = e->getElementWidth();
-    double height = e->getElementHeight();
+    const auto& box = e->getBoundingBox();
 
-    x = std::max(0.0, x - width / 2);
-    y = std::max(0.0, y - height / 2);
+    x = std::max(0.0, x - box.width / 2);
+    y = std::max(0.0, y - box.height / 2);
 
-    e->setX(x);
-    e->setY(y);
+    e->setOrigin(x, y);
 
     undoRedo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, e.get()));
     auto sel = SelectionFactory::createFromFloatingElement(this, page, layer, view, std::move(e));
@@ -2480,6 +2498,8 @@ void Control::clipboardPasteXournal(ObjectInputStream& in) {
                 element = std::make_unique<TexImage>();
             } else if (name == "Text") {
                 element = std::make_unique<Text>();
+            } else if (name == "Link") {
+                element = std::make_unique<Link>();
             } else {
                 throw InputStreamException(FS(FORMAT_STR("Get unknown object {1}") % name), __FILE__, __LINE__);
             }
@@ -2621,16 +2641,6 @@ void Control::fontChanged(const XojFont& font) {
     if (TextEditor* editor = getTextEditor(); editor) {
         editor->setFont(font);
     }
-}
-
-/**
- * The core handler for inserting latex
- */
-void Control::runLatex() {
-    /*
-     * LatexController::run() will open a non-blocking dialog.
-     */
-    LatexController::run(this);
 }
 
 /**
