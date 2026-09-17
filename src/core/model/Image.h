@@ -20,16 +20,15 @@
 #include <cairo.h>                  // for cairo_surface_t, cairo_status_t
 #include <gdk-pixbuf/gdk-pixbuf.h>  // for GdkPixbufFormat, GdkPixbuf
 
-#include "util/Size.h"
 #include "util/raii/CairoWrappers.h"
 
-#include "Element.h"  // for Element
+#include "RectangularElement.h"
 
 class ObjectInputStream;
 class ObjectOutputStream;
 
 
-class Image: public Element {
+class Image: public RectangularElement {
 public:
     Image();
     Image(const Image&) = delete;
@@ -39,9 +38,6 @@ public:
     virtual ~Image();
 
 public:
-    void setWidth(double width);
-    void setHeight(double height);
-
     /// Set the image data by copying the data from the provided string_view.
     void setImage(std::string_view data);
 
@@ -62,9 +58,6 @@ public:
     /// Returns the internal surface that contains the rendered image data.
     cairo_surface_t* getImage() const;
 
-    void scale(double x0, double y0, double fx, double fy, double rotation, bool restoreLineWidth) override;
-    void rotate(double x0, double y0, double th) override;
-
     auto clone() const -> ElementPtr override;
 
     bool hasData() const;
@@ -75,12 +68,10 @@ public:
     /// Return the length of the raw data.
     size_t getRawDataLength() const;
 
-    /// Return the size of the raw image, or Image::NO_SIZE if the image has not been rendered yet.
-    xoj::util::Size<int> getImageSize() const;
+    /// Returns the raw data
+    inline const std::string& getBinaryData() const { return data; }
 
     [[maybe_unused]] GdkPixbufFormat* getImageFormat() const;
-
-    static constexpr auto NOSIZE = xoj::util::Size<int>{-1, -1};
 
 public:
     // Serialize interface
@@ -96,7 +87,6 @@ private:
 
     /// Image format information.
     mutable GdkPixbufFormat* format = nullptr;
-    mutable xoj::util::Size<int> imageSize = NOSIZE;
 
     std::string data;
 };

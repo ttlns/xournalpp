@@ -20,15 +20,15 @@
 #include "util/raii/GObjectSPtr.h"
 
 #include "AudioContent.h"
-#include "Element.h"
-#include "Font.h"          // for XojFont
+#include "Font.h"  // for XojFont
+#include "RectangularElement.h"
 #include "TextAlignment.h"
 
 class ObjectInputStream;
 class ObjectOutputStream;
 class XojPdfRectangle;
 
-class Text: public Element, public AudioContent {
+class Text: public RectangularElement, public AudioContent {
 public:
     Text();
     ~Text() override;
@@ -51,14 +51,6 @@ public:
     xoj::util::GObjectSPtr<PangoLayout> createPangoLayout() const;
     void updatePangoFont(PangoLayout* layout) const;
 
-    void scale(double x0, double y0, double fx, double fy, double rotation, bool restoreLineWidth) override;
-    void rotate(double x0, double y0, double th) override;
-
-    void setOrigin(double x, double y) override;
-    const xoj::util::Point<double>& getOrigin() const override;
-
-    bool rescaleOnlyAspectRatio() const override;
-
     /// Set the text's wrapping width. Use Text::NO_WRAP to disable wrapping
     void setWrap(double wrap);
 
@@ -80,10 +72,12 @@ public:
     void readSerialized(ObjectInputStream& in) override;
 
     struct Boxes {
-        xoj::util::Rectangle<double> snap;
-        xoj::util::Rectangle<double> bounds;
+        xoj::util::Size<double> theoreticalSize;
+        /// Could be larger or smaller than the theoretical size, and there could be an offset
+        xoj::util::Rectangle<double> effectiveBounds;
     };
-    static Boxes computeBoxesForLayout(PangoLayout* layout, xoj::util::Point<double> origin, double wrapWidth);
+    /// Get the boxes out of a Pango context, ignoring any affine transformation
+    static Boxes computeBoxesForLayout(PangoLayout* layout, double wrapWidth);
 
 protected:
     void calcSize() const override;
@@ -95,6 +89,13 @@ private:
     XojFont font;
 
     std::string text;
+
+    /**
+     * The size of the Pango layout, without any affine transformation applied (so in Text element coordinates)
+     *
+     * Could be larger or smaller than the theoretical size this->naturalSize, and there could be an offset
+     */
+    mutable xoj::util::Rectangle<double> effectiveBounds;
 
     double wrapWidth = NO_WRAP;  ///< NO_WRAP for no wrap
     TextAlignment align = TextAlignment::LEFT;

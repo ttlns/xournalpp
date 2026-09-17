@@ -188,6 +188,8 @@ public:
     bool hasPressure() const;
     double getAvgPressure() const;
 
+    const xoj::util::Point<double>& getOrigin() const override;
+
     void move(double dx, double dy) override;
     void scale(double x0, double y0, double fx, double fy, double rotation, bool restoreLineWidth) override;
     void rotate(double x0, double y0, double th) override;
@@ -206,8 +208,6 @@ public:
     // Serialize interface
     void serialize(ObjectOutputStream& out) const override;
     void readSerialized(ObjectInputStream& in) override;
-
-    bool rescaleWithMirror() const override;
 
 protected:
     void calcSize() const override;

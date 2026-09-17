@@ -2395,21 +2395,19 @@ void Control::clipboardPasteImage(GdkPixbuf* img) {
     pageWidth = pageWidth * 3.0 / 4.0;
     pageHeight = pageHeight * 3.0 / 4.0;
 
-    auto scaledWidth = width;
-    auto scaledHeight = height;
+
+    double scaling = 1;
 
     if (width > pageWidth) {
-        scaledWidth = pageWidth;
-        scaledHeight = (scaledWidth * height) / width;
+        scaling = pageWidth / width;
+    }
+    if (height > pageHeight) {
+        scaling = std::min(scaling, pageHeight / height);
     }
 
-    if (scaledHeight > pageHeight) {
-        scaledHeight = pageHeight;
-        scaledWidth = (scaledHeight * width) / height;
-    }
+    scaling /= zoom100;
 
-    image->setWidth(scaledWidth);
-    image->setHeight(scaledHeight);
+    image->setTransformation(xoj::util::Matrix::SCALING(scaling, scaling));
 
     clipboardPaste(std::move(image));
 }
@@ -2439,7 +2437,7 @@ void Control::clipboardPaste(ElementPtr e) {
     x = std::max(0.0, x - box.width / 2);
     y = std::max(0.0, y - box.height / 2);
 
-    e->setOrigin(x, y);
+    e->move(x, y);
 
     undoRedo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, e.get()));
     auto sel = SelectionFactory::createFromFloatingElement(this, page, layer, view, std::move(e));

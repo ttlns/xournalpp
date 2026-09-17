@@ -8,33 +8,25 @@
 
 #include "model/Element.h"                        // for Element, ELEMENT_TE...
 #include "util/Rectangle.h"                       // for Rectangle
+#include "util/matrix/RectangleMultiply.h"        // for operator*
 #include "util/raii/GObjectSPtr.h"                // for GObjectSPtr
 #include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
 #include "util/serializing/ObjectOutputStream.h"  // for ObjectOutputStream
 
-using xoj::util::Rectangle;
-
-TexImage::TexImage(): Element(ELEMENT_TEXIMAGE) { this->sizeCalculated = true; }
+TexImage::TexImage(): RectangularElement(ELEMENT_TEXIMAGE) {}
 
 TexImage::~TexImage() { freeImageAndPdf(); }
 
 void TexImage::freeImageAndPdf() {
-    if (this->image) {
-        cairo_surface_destroy(this->image);
-        this->image = nullptr;
-    }
-
+    this->image.reset();
     this->pdf.reset();
 }
 
 auto TexImage::cloneTexImage() const -> std::unique_ptr<TexImage> {
-
     auto img = std::make_unique<TexImage>();
-    img->boundingBox = this->boundingBox;
-    img->setColor(this->getColor());
+    static_cast<RectangularElement&>(*img) = *this;
+
     img->text = this->text;
-    img->snappedBounds = this->snappedBounds;
-    img->sizeCalculated = this->sizeCalculated;
 
     // Clone has a copy of our PDF.
     img->pdf = this->pdf;
@@ -49,14 +41,25 @@ auto TexImage::cloneTexImage() const -> std::unique_ptr<TexImage> {
 
 auto TexImage::clone() const -> ElementPtr { return cloneTexImage(); }
 
-void TexImage::setWidth(double width) {
-    this->boundingBox.width = width;
-    this->calcSize();
-}
+auto TexImage::getNativeSize() const -> xoj::util::Size<double> {
+    if (pdf) {
+        if (poppler_document_get_n_pages(pdf.get()) < 1) {
+            g_warning("Got latex PDF without pages!: %s", this->getText().c_str());
+            return {0, 0};
+        }
 
-void TexImage::setHeight(double height) {
-    this->boundingBox.height = height;
-    this->calcSize();
+        PopplerPage* page = poppler_document_get_page(pdf.get(), 0);
+
+        xoj::util::Size<double> res{0, 0};
+        poppler_page_get_size(page, &res.width, &res.height);
+        return res;
+    }
+    if (image) {
+        return xoj::util::Size<double>(cairo_image_surface_get_width(image.get()),
+                                       cairo_image_surface_get_height(image.get()));
+    }
+    g_warning("TexImage with no PDF nor Image...");
+    return {0, 0};
 }
 
 auto TexImage::cairoReadFunction(TexImage* image, unsigned char* data, unsigned int length) -> cairo_status_t {
@@ -96,13 +99,10 @@ auto TexImage::loadData(std::string&& bytes, GError** err) -> bool {
         if (!pdf.get() || poppler_document_get_n_pages(this->pdf.get()) < 1) {
             return false;
         }
-        if (std::abs(this->boundingBox.area()) <= std::numeric_limits<double>::epsilon()) {
-            xoj::util::GObjectSPtr<PopplerPage> page(poppler_document_get_page(this->pdf.get(), 0), xoj::util::adopt);
-            poppler_page_get_size(page.get(), &this->boundingBox.width, &this->boundingBox.height);
-        }
     } else if (type == "PNG") {
-        this->image = cairo_image_surface_create_from_png_stream(
-                reinterpret_cast<cairo_read_func_t>(&cairoReadFunction), this);
+        this->image.reset(cairo_image_surface_create_from_png_stream(
+                                  reinterpret_cast<cairo_read_func_t>(&cairoReadFunction), this),
+                          xoj::util::adopt);
     } else {
         g_warning("Unknown Latex image type: \"%s\"", type.c_str());
     }
@@ -110,32 +110,15 @@ auto TexImage::loadData(std::string&& bytes, GError** err) -> bool {
     return true;
 }
 
-auto TexImage::getImage() const -> cairo_surface_t* { return this->image; }
+auto TexImage::getImage() const -> cairo_surface_t* { return this->image.get(); }
 
 auto TexImage::getPdf() const -> PopplerDocument* { return this->pdf.get(); }
-
-void TexImage::scale(double x0, double y0, double fx, double fy, double rotation,
-                     bool) {  // line width scaling option is not used
-
-    this->boundingBox.x = (this->boundingBox.x - x0) * fx + x0;
-    this->boundingBox.y = (this->boundingBox.y - y0) * fy + y0;
-
-    this->boundingBox.width *= fx;
-    this->boundingBox.height *= fy;
-    this->calcSize();
-}
-
-void TexImage::rotate(double x0, double y0, double th) {
-    // Rotation for TexImages not yet implemented
-}
 
 void TexImage::serialize(ObjectOutputStream& out) const {
     out.writeObject("TexImage");
 
-    this->Element::serialize(out);
+    this->RectangularElement::serialize(out);
 
-    out.writeDouble(this->boundingBox.width);
-    out.writeDouble(this->boundingBox.height);
     out.writeString(this->text);
 
     out.writeString(this->binaryData);
@@ -146,13 +129,9 @@ void TexImage::serialize(ObjectOutputStream& out) const {
 void TexImage::readSerialized(ObjectInputStream& in) {
     in.readObject("TexImage");
 
-    this->Element::readSerialized(in);
+    this->RectangularElement::readSerialized(in);
 
-    this->boundingBox.width = in.readDouble();
-    this->boundingBox.height = in.readDouble();
     this->text = in.readString();
-
-    freeImageAndPdf();
 
     std::string data = in.readString();
     this->loadData(std::move(data), nullptr);
@@ -162,6 +141,8 @@ void TexImage::readSerialized(ObjectInputStream& in) {
 }
 
 void TexImage::calcSize() const {
-    this->snappedBounds = this->boundingBox;
+    this->naturalSize = getNativeSize();
+    this->snappedBounds = transformationMatrix * xoj::util::Rectangle<double>({0, 0}, naturalSize);
+    this->boundingBox = this->snappedBounds;
     this->sizeCalculated = true;
 }

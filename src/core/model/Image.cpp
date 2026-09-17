@@ -14,6 +14,7 @@
 #include "util/Assert.h"     // for xoj_assert
 #include "util/Rectangle.h"  // for Rectangle
 #include "util/i18n.h"
+#include "util/matrix/RectangleMultiply.h"
 #include "util/raii/GObjectSPtr.h"  // for GObjectSPtr
 #include "util/safe_casts.h"
 #include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
@@ -21,7 +22,7 @@
 
 using xoj::util::Rectangle;
 
-Image::Image(): Element(ELEMENT_IMAGE) {}
+Image::Image(): RectangularElement(ELEMENT_IMAGE) {}
 
 Image::~Image() {
     if (this->format) {
@@ -32,26 +33,12 @@ Image::~Image() {
 
 auto Image::clone() const -> ElementPtr {
     auto img = std::make_unique<Image>();
+    static_cast<RectangularElement&>(*img) = *this;
 
-    img->boundingBox = this->boundingBox;
-    img->setColor(this->getColor());
     img->data = this->data;
-
     img->image = this->image;
-    img->snappedBounds = this->snappedBounds;
-    img->sizeCalculated = this->sizeCalculated;
 
     return img;
-}
-
-void Image::setWidth(double width) {
-    this->boundingBox.width = width;
-    this->calcSize();
-}
-
-void Image::setHeight(double height) {
-    this->boundingBox.height = height;
-    this->calcSize();
 }
 
 void Image::setImage(std::string_view data) { setImage(std::string(data)); }
@@ -110,7 +97,7 @@ static xoj::util::CairoSurfaceSPtr bufferFromPixbuf(GdkPixbuf* img) {
 }
 
 void Image::setImage(GdkPixbuf* img) {
-    this->imageSize = xoj::util::Size<int>(gdk_pixbuf_get_width(img), gdk_pixbuf_get_height(img));
+    this->naturalSize = xoj::util::Size<double>(gdk_pixbuf_get_width(img), gdk_pixbuf_get_height(img));
     this->image = bufferFromPixbuf(img);
 
     const cairo_write_func_t writeFunc = [](void* bufferPtr, const unsigned char* data,
@@ -173,7 +160,9 @@ auto Image::renderBuffer() const -> std::optional<std::string> {
     xoj_assert(tmp != nullptr);
     xoj::util::GObjectSPtr<GdkPixbuf> pixbuf(gdk_pixbuf_apply_embedded_orientation(tmp), xoj::util::adopt);
 
-    this->imageSize = {gdk_pixbuf_get_width(pixbuf.get()), gdk_pixbuf_get_height(pixbuf.get())};
+    this->naturalSize =
+            xoj::util::Size<double>(gdk_pixbuf_get_width(pixbuf.get()), gdk_pixbuf_get_height(pixbuf.get()));
+
     this->image = bufferFromPixbuf(pixbuf.get());
     return std::nullopt;
 }
@@ -186,29 +175,10 @@ auto Image::getImage() const -> cairo_surface_t* {
     return this->image.get();
 }
 
-void Image::scale(double x0, double y0, double fx, double fy, double rotation,
-                  bool) {  // line width scaling option is not used
-    this->boundingBox.x -= x0;
-    this->boundingBox.x *= fx;
-    this->boundingBox.x += x0;
-    this->boundingBox.y -= y0;
-    this->boundingBox.y *= fy;
-    this->boundingBox.y += y0;
-
-    this->boundingBox.width *= fx;
-    this->boundingBox.height *= fy;
-    this->calcSize();
-}
-
-void Image::rotate(double x0, double y0, double th) {}
-
 void Image::serialize(ObjectOutputStream& out) const {
     out.writeObject("Image");
 
-    this->Element::serialize(out);
-
-    out.writeDouble(this->boundingBox.width);
-    out.writeDouble(this->boundingBox.height);
+    this->RectangularElement::serialize(out);
 
     out.writeImage(this->data);
 
@@ -218,10 +188,7 @@ void Image::serialize(ObjectOutputStream& out) const {
 void Image::readSerialized(ObjectInputStream& in) {
     in.readObject("Image");
 
-    this->Element::readSerialized(in);
-
-    this->boundingBox.width = in.readDouble();
-    this->boundingBox.height = in.readDouble();
+    this->RectangularElement::readSerialized(in);
 
     this->image.reset();
     this->data = in.readImage();
@@ -231,7 +198,13 @@ void Image::readSerialized(ObjectInputStream& in) {
 }
 
 void Image::calcSize() const {
-    this->snappedBounds = this->boundingBox;
+    if (auto opt = renderBuffer(); opt.has_value()) {
+        // An error occurred
+        g_warning("%s", opt->c_str());
+        return;
+    }
+    this->snappedBounds = transformationMatrix * xoj::util::Rectangle<double>({0, 0}, naturalSize);
+    this->boundingBox = this->snappedBounds;
     this->sizeCalculated = true;
 }
 
@@ -240,7 +213,5 @@ bool Image::hasData() const { return !this->data.empty(); }
 const unsigned char* Image::getRawData() const { return reinterpret_cast<const unsigned char*>(this->data.data()); }
 
 size_t Image::getRawDataLength() const { return this->data.size(); }
-
-xoj::util::Size<int> Image::getImageSize() const { return this->imageSize; }
 
 GdkPixbufFormat* Image::getImageFormat() const { return this->format; }

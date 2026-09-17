@@ -32,7 +32,7 @@ class TexImage;
 class Document;
 class XojPageView;
 class Layer;
-class Element;
+class RectangularElement;
 class LatexSettings;
 class IntEdLatexDialog;
 
@@ -171,16 +171,6 @@ private:
     double posy = 0;
 
     /**
-     * Image width
-     */
-    double imgwidth = 0;
-
-    /**
-     * Image height
-     */
-    double imgheight = 0;
-
-    /**
      * Selected Page
      */
     PageRef page;
@@ -195,7 +185,7 @@ private:
     /**
      * The element that is currently being edited.
      */
-    const Element* selectedElem = nullptr;
+    const RectangularElement* selectedElem = nullptr;
 
     /**
      * The controller owns the rendered preview in order to be able to delete it

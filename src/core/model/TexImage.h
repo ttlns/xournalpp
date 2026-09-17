@@ -18,15 +18,16 @@
 #include <glib.h>     // for GError
 #include <poppler.h>  // for PopplerDocument
 
+#include "util/raii/CairoWrappers.h"
 #include "util/raii/GObjectSPtr.h"  // for GObjectSPtr
 
-#include "Element.h"  // for Element
+#include "RectangularElement.h"
 
 class ObjectInputStream;
 class ObjectOutputStream;
 
 
-class TexImage: public Element {
+class TexImage: public RectangularElement {
 public:
     TexImage();
     TexImage(const TexImage&) = delete;
@@ -36,8 +37,8 @@ public:
     ~TexImage() override;
 
 public:
-    void setWidth(double width);
-    void setHeight(double height);
+    /// Get the size [width, height] of the content, ignoring any resizing done in the app
+    xoj::util::Size<double> getNativeSize() const;
 
     /**
      * Returns the binary data (PDF or PNG (deprecated)).
@@ -55,9 +56,6 @@ public:
      * The document needs to be referenced, if it will be hold somewhere
      */
     PopplerDocument* getPdf() const;
-
-    void scale(double x0, double y0, double fx, double fy, double rotation, bool restoreLineWidth) override;
-    void rotate(double x0, double y0, double th) override;
 
     // text tag to alow latex
     void setText(std::string text);
@@ -95,7 +93,7 @@ private:
     /**
      * Tex image, if rendered as image. Note: this is deprecated and subject to removal in a later version.
      */
-    cairo_surface_t* image = nullptr;
+    xoj::util::CairoSurfaceSPtr image;
 
     /**
      * PNG Image / PDF Document
