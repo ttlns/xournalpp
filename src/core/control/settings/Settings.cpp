@@ -812,6 +812,9 @@ void Settings::loadButtonConfig() {
                 if (xoj::tool::hasCapability(type, TOOL_CAP_COLOR)) {
                     if (int iColor; e.getInt("color", iColor)) {
                         cfg->color = Color(as_unsigned(iColor));
+                    } else {
+                        // If not specified: do not change
+                        cfg->color = std::nullopt;
                     }
                 }
             }
@@ -957,8 +960,8 @@ void Settings::saveButtonConfig() {
                 e.setString("size", toolSizeToString(cfg->size).data());
             }
 
-            if (xoj::tool::hasCapability(type, TOOL_CAP_COLOR)) {
-                e.setIntHex("color", int32_t(uint32_t(cfg->color)));
+            if (xoj::tool::hasCapability(type, TOOL_CAP_COLOR) && cfg->color) {
+                e.setIntHex("color", int32_t(uint32_t(*cfg->color)));
             }
         }
 
@@ -991,8 +994,6 @@ void Settings::save() {
     xmlDocPtr doc = nullptr;
     xmlNodePtr root = nullptr;
     xmlNodePtr xmlNode = nullptr;
-
-    xmlIndentTreeOutput = true;
 
     doc = xmlNewDoc(reinterpret_cast<const xmlChar*>("1.0"));
     if (doc == nullptr) {
@@ -1252,7 +1253,7 @@ void Settings::save() {
         saveData(root, p.first, p.second);
     }
 
-    xmlSaveFormatFileEnc(char_cast(filepath.u8string().c_str()), doc, "UTF-8", 1);
+    xmlSaveFormatFileEnc(char_cast(filepath.u8string().c_str()), doc, "UTF-8", true);
     xmlFreeDoc(doc);
 }
 

@@ -21,7 +21,7 @@ endif()
 ## Project related Variables
 ## Also update changelog in debian folder!
 project(xournalpp
-        VERSION 1.3.7
+        VERSION 1.3.8
         DESCRIPTION "Xournal++ - Open source hand note-taking program"
         HOMEPAGE_URL "https://xournalpp.github.io/"
         LANGUAGES CXX C)
@@ -85,8 +85,6 @@ configure_file(
 )
 
 find_package(PkgConfig REQUIRED)
-
-set(PROJECT_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}")
 
 # Git repo info
 include(GitRepo)
@@ -260,6 +258,10 @@ else()
     find_package(X11 COMPONENTS Xi Xext)
 endif ()
 
+if (TARGET X11::X11)
+    set(ENABLE_X11 ON)
+endif ()
+
 add_library(external_modules INTERFACE)
 target_link_libraries(external_modules INTERFACE
         PkgConfig::ExternalModules
@@ -277,7 +279,6 @@ target_link_libraries(external_modules INTERFACE
 target_compile_definitions(external_modules INTERFACE
         GLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_40
         GDK_VERSION_MIN_REQUIRED=GDK_VERSION_3_18
-        $<$<TARGET_EXISTS:X11::X11>:X11_ENABLED>
         )
 target_link_options(external_modules INTERFACE
         $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:GNU>>>:-rdynamic>
@@ -348,12 +349,6 @@ configure_file(
 configure_file(
         src/config-git.h.in
         src/config-git.h
-        ESCAPE_QUOTES @ONLY
-)
-
-configure_file(
-        src/config-paths.h.in
-        src/config-paths.h
         ESCAPE_QUOTES @ONLY
 )
 
