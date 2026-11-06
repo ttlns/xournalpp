@@ -433,7 +433,7 @@ void on_startup(GApplication* application, XMPtr app_data) {
     initResourcePath(app_data->gladePath.get(), "ui/xournalpp.css", false);
     initResourcePath(app_data->gladePath.get(), "ui/toolbar.ini", false);
 
-    app_data->control = std::make_unique<Control>(application, app_data->gladePath.get(), app_data->disableAudio);
+    app_data->control = std::make_unique<Control>(application, app_data->gladePath.get());
 
     auto& globalLatexTemplatePath = app_data->control->getSettings()->latexSettings.globalTemplatePath;
     if (globalLatexTemplatePath.empty()) {
@@ -444,7 +444,7 @@ void on_startup(GApplication* application, XMPtr app_data) {
 
     app_data->win = std::make_unique<MainWindow>(app_data->gladePath.get(), app_data->control.get(),
                                                  GTK_APPLICATION(application));
-    app_data->control->initWindow(app_data->win.get());
+    app_data->control->initWindow(app_data->win.get(), app_data->disableAudio);
     app_data->win->populate(app_data->gladePath.get());
 
     if (migrateResult.status != MigrateStatus::NotNeeded) {
@@ -590,13 +590,13 @@ void XournalMain::initLocalisation() {
 
 #endif  // ENABLE_NLS
 
-    // Not working on GNU g++(mingww) forWindows! Only working on Linux/macOS and with msvc
+    // Not working on GNU g++(ucrt64) for Windows! Only working on Linux/macOS and with msvc
     try {
         std::locale::global(std::locale(""));  // "" - system default locale
         initCAndCoutLocales();
     } catch (const std::runtime_error& e) {
         g_warning("XournalMain: System default locale could not be set.\n - Caused by: %s\n - Note that it is not "
-                  "supported to set the locale using mingw-w64 on windows.\n - This could be solved by compiling "
+                  "supported to set the locale using mingw-w64-ucrt on windows.\n - This could be solved by compiling "
                   "xournalpp with msvc",
                   e.what());
     }
